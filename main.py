@@ -12,6 +12,7 @@ from keep_alive import keep_alive
 try:
 	tokens = {
 		'discord': config('DISCORD_API_TOKEN', cast=str),
+		'logs_channel': config('LOG_CHANNEL_ID', cast=int)
 	}
 except UndefinedValueError:
 	exit()
@@ -79,11 +80,12 @@ class TenderOptionsView(disnake.ui.View):
 		role_id = 927486150598328340
 		if role_id in interaction.author._roles:
 			interactor_id = interaction.author.name + "#" + interaction.author.discriminator
-			explorer.execute(f'SELECT * FROM tender_shares WHERE contractor_id = "{interactor_id}" AND contract_task = "{self.row}"')
+			explorer.execute(f'SELECT * FROM tender_shares WHERE contractor_id = ? AND contract_task = ?', (interactor_id,self.row,))
 			row_count = explorer.rowcount
 			if row_count == 0:
-				explorer.execute(f'INSERT INTO tender_shares(contractor_id, contract_task, share) VALUES(%s, %s, %s)', (interactor_id, self.row, 1))
-				explorer.execute(f'UPDATE contracts SET contract_remaining = contract_remaining - 1 WHERE contract_name = {self.row}')
+				params = (interactor_id, self.row, 1,)
+				explorer.execute(f'INSERT INTO tender_shares(contractor_id, contract_task, share) VALUES(?, ?, ?)', params)
+				explorer.execute(f'UPDATE contracts SET contract_remaining = contract_remaining - 1 WHERE contract_name = "?"', (self.row,))
 				db.commit()
 				embed = disnake.Embed(title="New log!", 
 					description=f"{interactor_id} took 1x share from the contract -> **{self.normal_name}**",
@@ -91,8 +93,8 @@ class TenderOptionsView(disnake.ui.View):
 					)
 				await channel.send(embed=embed)
 			else:
-				explorer.execute(f'UPDATE tender_shares SET share = share + 1 WHERE contractor_id = "{interactor_id}" AND contract_task = "{self.row}"')
-				explorer.execute(f'UPDATE contracts SET contract_remaining = contract_remaining - 1 WHERE contract_name = {self.row}')
+				explorer.execute(f'UPDATE tender_shares SET share = share + 1 WHERE contractor_id = ? AND contract_task = ?', (interactor_id, self.row,))
+				explorer.execute(f'UPDATE contracts SET contract_remaining = contract_remaining - 1 WHERE contract_name = ?', (self.row,))
 				db.commit()
 				embed = disnake.Embed(title="New log!", 
 					description=f"{interactor_id} took 1x share from the contract -> **{self.normal_name}**",
@@ -110,7 +112,7 @@ class TenderOptionsView(disnake.ui.View):
 		if role_id in interaction.author._roles:
 			interactor_id = str(interaction.author)
 			print(interactor_id)
-			explorer.execute(f'SELECT * FROM tender_shares WHERE contractor_id = "{interactor_id}" AND contract_task = "{self.row}"')
+			explorer.execute(f'SELECT * FROM tender_shares WHERE contractor_id = ? AND contract_task = ?', (interactor_id, self.row,))
 			row_count = explorer.rowcount
 			if row_count == 0:
 				await interaction.response.send_message(f"You have less than x1 of the total share. What are you trying to cancel anyway?", ephemeral=True)
@@ -120,8 +122,8 @@ class TenderOptionsView(disnake.ui.View):
 					)
 				await channel.send(embed=embed)
 			else:
-				explorer.execute(f'UPDATE tender_shares SET share = share - 1 WHERE contractor_id = "{interactor_id}" AND contract_task = "{self.row}"')
-				explorer.execute(f'UPDATE contracts SET contract_remaining = contract_remaining + 1 WHERE contract_name = {self.row}')
+				explorer.execute(f'UPDATE tender_shares SET share = share - 1 WHERE contractor_id = ? AND contract_task = ?', (interactor_id, self.row,))
+				explorer.execute(f'UPDATE contracts SET contract_remaining = contract_remaining + 1 WHERE contract_name = ?', (self.row,))
 				db.commit()
 				await interaction.response.send_message(f"You cancelled 1x of your total share of **{self.normal_name}**.", ephemeral=True)
 				embed = disnake.Embed(title="New log!", 
@@ -152,7 +154,8 @@ class CoreCommands(commands.Cog):
 	async def _new(self, inter: disnake.ApplicationCommandInteraction, name: str, details: str, total_share: int, total_time: str, task_name: str):
 		timestamp = int(time.mktime(datetime.datetime.strptime(total_time, "%d/%m/%Y").timetuple()))
 		view = TenderOptionsView(task_name, name, (timestamp-int(time.time())))
-		explorer.execute("INSERT INTO contracts (contract_name,contract_share,contract_time,contract_remaining) VALUES(%s,%s,%s,%s)", (task_name, total_share, timestamp, total_share))
+		params = (task_name, total_share, timestamp, total_share)
+		explorer.execute(f"INSERT INTO contracts (contract_name,contract_share,contract_time,contract_remaining) VALUES(?, ?, ?, ?)", params)
 		db.commit()
 		embed = disnake.Embed(
 			title=f":mega: New Contract -> {name}", 
